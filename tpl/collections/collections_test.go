@@ -25,6 +25,7 @@ import (
 
 	"github.com/gohugoio/hugo/common/maps"
 	"github.com/gohugoio/hugo/config/testconfig"
+	"github.com/spf13/cast"
 
 	qt "github.com/frankban/quicktest"
 )
@@ -114,6 +115,57 @@ func TestGroup(t *testing.T) {
 
 		if b, ok := test.expect.(bool); ok && !b {
 			c.Assert(err, qt.Not(qt.IsNil), errMsg)
+			continue
+		}
+
+		c.Assert(err, qt.IsNil, errMsg)
+		c.Assert(result, qt.Equals, test.expect, errMsg)
+	}
+}
+
+type tstPartitioner struct{}
+
+func (g tstPartitioner) Partition(n any, items any) (any, error) {
+	nv, err := cast.ToIntE(n)
+	if err != nil {
+		return nil, err
+	}
+	if nv < 1 {
+		return nil, errors.New("Partition size must be >= 1")
+	}
+	all := reflect.ValueOf(items).Len()
+	wholes := all / nv
+	remainder := all % nv
+	return fmt.Sprintf("%d = %d * %d + %d", all, wholes, nv, remainder), nil
+}
+
+func TestPartition(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	ns := newNs()
+
+	for i, test := range []struct {
+		n      any
+		items  any
+		expect any
+	}{
+		{5, []tstPartitioner{{}, {}, {}, {}, {}}, "5 = 1 * 5 + 0"},
+		{3, []tstPartitioner{{}, {}, {}, {}, {}}, "5 = 1 * 3 + 2"},
+		{2, []tstPartitioner{{}, {}, {}, {}, {}}, "5 = 2 * 2 + 1"},
+		{1, []tstPartitioner{{}, {}, {}, {}, {}}, "5 = 5 * 1 + 0"},
+		{20, []tstPartitioner{{}, {}, {}, {}, {}}, "5 = 0 * 20 + 5"},
+		{0, []tstPartitioner{{}, {}, {}, {}, {}}, false},
+		{"4", []tstPartitioner{{}, {}, {}, {}, {}}, "5 = 1 * 4 + 1"},
+		{"0", []tstPartitioner{{}, {}, {}, {}, {}}, false},
+		{2.5, []tstPartitioner{{}, {}, {}, {}, {}}, "5 = 2 * 2 + 1"},
+		{nil, []tstPartitioner{{}, {}, {}, {}, {}}, false},
+	} {
+		errMsg := qt.Commentf("[%d] %v", i, test)
+
+		result, err := ns.Partition(test.n, test.items)
+
+		if b, ok := test.expect.(bool); ok && !b {
+			c.Assert(err, qt.IsNotNil, errMsg)
 			continue
 		}
 
